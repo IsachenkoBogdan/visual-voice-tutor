@@ -1,0 +1,5 @@
+*.xlsx
+*.mmd
+
+docs/diagrams/mermaid-config.json
+docs/diagrams/puppeteer-config.json

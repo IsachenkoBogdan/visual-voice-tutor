@@ -1,6 +1,6 @@
-# Governance
-
 # Visual Voice Tutor Agent
+
+Governance проекта.
 
 ## 1. Risk Register
 
