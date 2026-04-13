@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  backend:
+    name: Backend Quality
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Sync dependencies
+        run: uv sync
+
+      - name: Ruff
+        run: uv run ruff check services/agent/src services/agent/tests
+
+      - name: Ty
+        run: uv run ty check
+
+      - name: Pytest
+        run: uv run pytest -q
+
+  web:
+    name: Web Quality
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+  hygiene:
+    name: Repository Hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Block internal dev files
+        run: |
+          set -euo pipefail
+          blocked="$(git ls-files | grep -E '(^|/)(AGENTS\.md|CLAUDE\.md)$|^TASKS\.md$|^VERSIONS\.md$' || true)"
+          if [ -n "$blocked" ]; then
+            echo "Blocked files detected in repository:"
+            echo "$blocked"
+            exit 1
+          fi

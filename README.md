@@ -1,91 +1,63 @@
-# Visual Voice Tutor Agent
+# Visual Voice Tutor
 
-## Что за задача, для кого и какая боль сейчас
+Production-minded monorepo для realtime мультимодального math tutor (4–7 класс).
 
-**Visual Voice Tutor Agent** — это PoC мультимодальной агентной системы для помощи ученикам **4–7 класса** по математике в момент затруднения.
+## Текущее состояние
 
-### Для кого
-- **Основной пользователь:** ребенок 4–7 класса
-- **Плательщик / заинтересованная сторона:** родитель
-- **Дополнительный пользователь:** частный репетитор или мини-школа как вспомогательный инструмент
+- Next.js tutor shell с `tldraw`, websocket runtime, scheduler и ASR/TTS streaming hooks
+- FastAPI orchestrator с typed contracts, board-aware checking, mock + real Azure hooks
+- Learner/session/billing groundwork:
+  - learner profiles
+  - session history
+  - usage accounting
+  - entitlement checks
+- Observability groundwork:
+  - Langfuse event hooks
+  - runtime metrics snapshot API
+- CI в `.github/workflows/ci.yml`
 
-### Какая боль сейчас
-Существующие способы помощи с математикой дома плохо закрывают сценарий **“ребенок застрял прямо сейчас”**:
+## Быстрый старт
 
-- репетитор помогает **по расписанию**, а не в момент проблемы
-- родитель вечером часто **не может или не хочет** сам разбирать задачу
-- текстовые решения, ГДЗ и обычные чат-боты часто дают **ответ без понимания**
-- ребенку сложно удерживать внимание на длинных объяснениях
-- ребенку может быть стыдно переспросить несколько раз
+```bash
+uv sync
+uv run vvt-api
+```
 
-В результате:
-- домашка превращается в стресс
-- пробелы копятся
-- ребенок уходит в списывание вместо понимания
-- родитель тратит время и нервы
+В отдельном терминале:
 
-## Что именно сделает PoC на демо
+```bash
+cd apps/web
+npm ci
+npm run dev
+```
 
-PoC покажет агентную систему, которая:
+## Основные URL
 
-1. принимает математическую задачу в текстовом виде, а при включенном ASR — и в голосовом
-2. определяет тему и примерный уровень сложности  
-3. извлекает контекст ученика из памяти:
-   - класс
-   - прошлые ошибки
-   - похожие прошлые затруднения
-4. строит **пошаговый план объяснения**
-5. объясняет решение **в realtime voice режиме и на интерактивной доске**
-6. после шага проверяет, понял ли ученик материал
-7. если ученик не понял — **перестраивает объяснение проще**
-8. сохраняет результат сессии в memory
-9. формирует краткий отчет родителю:
-   - какая была тема
-   - где возникло затруднение
-   - понадобилось ли повторное объяснение
-   - есть ли устойчивый пробел
+- Web home: `http://localhost:3000/`
+- Tutor runtime: `http://localhost:3000/tutor`
+- Learners shell: `http://localhost:3000/learners`
+- Billing shell: `http://localhost:3000/billing`
+- Backend health: `http://localhost:8000/health`
 
-## Что НЕ делает PoC
+## API surface (v1 groundwork)
 
-PoC **не** является полноценной заменой репетитора и сознательно ограничен по scope.
+- `GET /api/v1/accounts/{user_id}`
+- `GET /api/v1/accounts/{user_id}/learners`
+- `GET /api/v1/learners/{learner_id}`
+- `GET /api/v1/learners/{learner_id}/sessions`
+- `GET /api/v1/billing/plans`
+- `GET /api/v1/billing/subscription/{learner_id}`
+- `GET /api/v1/billing/entitlement/{learner_id}`
+- `GET /api/v1/ops/metrics`
 
-### Out of scope
-- не покрывает все предметы, только **математику**
-- не покрывает все классы, только **4–7 класс**
-- не решает весь школьный курс
-- не готовит полноценно к экзаменам
-- не проверяет тетради и рукописные листы в полном объеме
-- не гарантирует педагогически идеальное объяснение во всех случаях
-- не ведет длинный образовательный трек на месяцы
-- не выполняет за ребенка домашнюю работу “под ключ”
-- не является открытым чат-ассистентом на любые темы
+## Auth gate (optional)
 
-### Внешняя база знаний
+Если включить:
 
-Во внешнем retrieval-контуре используется компактный банк математических задач:
+```env
+API_AUTH_ENABLED=true
+API_AUTH_TOKEN=super-secret
+NEXT_PUBLIC_API_KEY=super-secret
+```
 
-- задачи с метаданными по теме, классу и сложности
-- эталонные шаги решения
-- уровни подсказок
-- визуальный шаблон объяснения для доски
-
-Эта база нужна для устойчивого качества, воспроизводимых evals и нормального контроля над объяснениями.
-
-## Структура репозитория
-
-- `README.md` — краткое описание проекта, pain point, demo scope, out-of-scope
-- `docs/product-proposal.md` — product proposal проекта
-- `docs/governance.md` — governance, risk register, policies и safety controls
-
-## Технологическая опора по `tldraw`
-
-Архитектура проекта опирается на официальные материалы `tldraw`:
-
-- [AI integrations](https://tldraw.dev/docs/ai)
-- [Agent starter kit](https://tldraw.dev/starter-kits/agent)
-
-Для нас это важно в трех местах:
-
-- агент вызывается программно из UI, а не только через чат;
-- модель получает двойной контекст холста: screenshot и структурированные данные о фигурах;
-- действия агента идут через типизированные action schemas с sanitization перед применением.
+то HTTP API и WS runtime требуют токен (`x-api-key`, `Authorization: Bearer ...` или `api_key` query).

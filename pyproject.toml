@@ -1,0 +1,70 @@
+[build-system]
+requires = ["uv_build>=0.8.15,<0.9.0"]
+build-backend = "uv_build"
+
+[project]
+name = "visual-voice-tutor"
+version = "0.1.0"
+description = "Backend and runtime services for Visual Voice Tutor"
+readme = "README.md"
+requires-python = ">=3.14,<3.15"
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.34",
+  "pydantic>=2.11",
+  "pydantic-settings>=2.9",
+  "httpx>=0.28",
+  "orjson>=3.10",
+  "structlog>=25.4",
+  "redis>=6.0",
+  "supabase>=2.15",
+  "tenacity>=9.1",
+  "python-dotenv>=1.1",
+  "websockets>=15.0",
+  "azure-cognitiveservices-speech>=1.42",
+  "opentelemetry-api>=1.33",
+  "opentelemetry-sdk>=1.33",
+  "opentelemetry-instrumentation-fastapi>=0.54b0",
+  "opentelemetry-exporter-otlp>=1.33",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3",
+  "pytest-asyncio>=0.26",
+  "anyio>=4.9",
+  "ruff>=0.11",
+  "ty>=0.0.1a17",
+  "pre-commit>=4.2",
+]
+
+[tool.uv]
+package = true
+
+[tool.uv.build-backend]
+module-root = "services/agent/src"
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+src = ["services/agent/src", "services/agent/tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
+ignore = ["E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+docstring-code-format = true
+
+[tool.ty.environment]
+python-version = "3.14"
+root = ["./services/agent/src"]
+
+[tool.ty.src]
+include = ["services/agent/src", "services/agent/tests"]
+respect-ignore-files = true
+
+[project.scripts]
+vvt-api = "visual_voice_tutor.main:main"

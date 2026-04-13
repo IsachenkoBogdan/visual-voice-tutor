@@ -3,3 +3,65 @@
 
 docs/diagrams/mermaid-config.json
 docs/diagrams/puppeteer-config.json
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# uv
+.uv/
+
+# Next.js / frontend
+node_modules/
+.next/
+out/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Logs
+*.log
+
+# Runtime files
+*.pid
+
+# Docker
+docker-data/
+
+# Generated artifacts
+*.sqlite3
+*.db
+
+# Misc
+tmp/
+temp/
+
+# Local agent/dev planning files (do not publish)
+AGENTS.md
+TASKS.md
+VERSIONS.md
+**/AGENTS.md
+**/CLAUDE.md
+.codex/

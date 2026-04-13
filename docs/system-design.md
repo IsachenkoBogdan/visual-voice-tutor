@@ -1,222 +1,346 @@
-# System Design — Visual Voice Tutor Agent
+# System Design
 
-## Референсы
+# Visual Voice Tutor
 
-Слой работы с холстом опирается на официальные материалы `tldraw`:
+## 1. Goal
 
-- [AI integrations](https://tldraw.dev/docs/ai)
-- [Agent starter kit](https://tldraw.dev/starter-kits/agent)
-
-Ключевые идеи оттуда:
-
-- программный вызов агента из UI;
-- двойной контекст холста: screenshot + structured shape data;
-- типизированные действия агента с валидацией перед применением.
-
----
-
-## 1. Ключевые архитектурные решения
-
-| Решение | Обоснование |
-|---|---|
-| Детерминированный tutoring loop | Вместо свободного agent loop система идет по стадиям: анализ, retrieval, план, проверка, показ шага |
-| `tldraw` как основной интерфейс | Агент объясняет не только текстом, а через заметки, стрелки, таблицы и подсветку |
-| Realtime speech-to-speech как основной voice path | Взаимодействие должно ощущаться живым; chained voice path остается fallback-режимом |
-| Банк задач как внешняя база знаний | Retrieval опирается на задачи с метаданными, шагами решения и уровнями подсказок |
-| Hybrid retrieval | Для математики важны и смысл, и точное совпадение формулировок |
-| Review перед показом шага | Перед delivery система проверяет policy, схему ответа и canvas actions |
-| Stateful session memory | Система помнит ход текущей сессии и повторяющиеся затруднения |
-| Явные fallback-режимы | При сбое voice, canvas, retrieval или memory сессия должна продолжаться в упрощенном виде |
+Build a production-oriented multimodal tutoring system that:
+- hears the student
+- understands the student’s current attempt
+- explains the next step in Russian
+- updates the whiteboard in sync with speech
+- checks whether the student understood
+- stores long-term learner memory
+- evolves version by version into a paid product
 
 ---
 
-## 2. Модули и их роли
+## 2. Chosen architecture
 
-| Модуль | Роль |
-|---|---|
-| **Student UI / tldraw Frontend** | Холст, кнопки действий, отображение визуальных подсказок |
-| **Canvas Context Builder** | Собирает screenshot, shapes in view, selection и recent actions |
-| **Tutor Orchestrator** | Управляет tutoring loop, вызывает retrieval и инструменты |
-| **Task Retriever** | Ищет релевантные задачи в банке задач |
-| **Pedagogical Planner** | Превращает retrieved context в пошаговый план объяснения |
-| **Canvas Action Executor** | Применяет безопасные действия к `tldraw` |
-| **Voice Layer** | Основной режим — realtime voice, резервный — chained voice |
-| **Session Memory Store** | Хранит состояние сессии и краткий профиль ученика |
-| **Validator / Guardrails** | Следит за hint-first policy и валидирует output |
-| **Observability / Evals** | Langfuse, application metrics, offline evals |
+## Frontend
+- Next.js App Router
+- React
+- TypeScript
+- Tailwind CSS
+- shadcn/ui
+- tldraw
+- client-side playback scheduler
+- websocket client
 
----
+## Backend
+- Python FastAPI service
+- WebSocket stream endpoint
+- custom tutoring orchestrator
+- board context builder
+- correctness checking
+- memory management
+- evaluation layer
 
-## 3. Основной workflow
-
-```text
-1. Student input
-2. Canvas context build
-3. Problem analysis
-4. Low confidence? -> clarification
-5. Task retrieval
-6. Pedagogical planning
-7. Step package build
-8. Review / validation
-9. Delivery: board + realtime voice
-10. Understanding check
-11. Simpler retry or next step
-12. Memory update
-13. Parent summary
-```
+## External services
+- Azure Speech for ASR and TTS
+- Azure OpenAI / Foundry for model inference
+- Supabase for persistent storage
+- Redis for hot session state
+- Langfuse for LLM observability
+- Grafana stack for infra observability
 
 ---
 
-## 4. State / Memory / Context
+## 3. Versioning strategy
 
-### Session State
+The product will be developed in staged versions.
 
-- `session_id`
-- `dialog_history`
-- `current_problem`
-- `retrieved_tasks`
-- `current_plan`
-- `current_step_idx`
-- `misunderstanding_count`
-- `canvas_snapshot_ref`
-- `completion_status`
+Version roadmap is defined in `VERSIONS.md`.
 
-### Long-term Memory
-
-Для первой версии достаточно хранить:
-
-- класс ученика;
-- последние проблемные темы;
-- повторяющиеся ошибки;
-- короткие итоги сессий.
-
-### Context Budget
-
-| Слот | Лимит |
-|---|---|
-| System + policy prompt | ~1200 токенов |
-| Student profile | ≤500 |
-| Session history | ≤1200 |
-| Retrieved tasks | ≤1800 |
-| Canvas summary | ≤600 |
-| User message | ≤400 |
-
-При переполнении:
-
-- history summarization;
-- сокращение retrieval до top-2;
-- упрощение canvas summary.
+Principles:
+- keep frontend and infra quality high from the start
+- keep runtime path simple
+- add product features gradually
+- do not ship broad scope before the tutoring core is reliable
 
 ---
 
-## 5. Retrieval-контур
+## 4. Main runtime flow
 
-Источник данных — **банк задач**.
-
-Каждая запись:
-
-- `task_id`
-- `grade`
-- `topic`
-- `difficulty`
-- `problem_text`
-- `solution_steps`
-- `hint_levels`
-- `board_pattern`
-
-Pipeline:
-
-```text
-problem
-→ normalize
-→ dense retrieval
-→ lexical retrieval
-→ fusion
-→ rerank
-→ top-3 tasks
-```
-
-Параметры:
-
-- dense: `BAAI/bge-m3`
-- lexical: BM25 / FTS
-- reranker: `BAAI/bge-reranker-v2-m3`
+1. The student speaks, types, or draws on the whiteboard.
+2. The frontend sends:
+   - transcript or input
+   - board delta
+   - active region metadata
+3. The backend updates live session state.
+4. The backend builds a tutoring context package.
+5. The orchestrator decides the next pedagogical step.
+6. The backend produces:
+   - narration text
+   - semantic anchors
+   - whiteboard actions
+7. Azure TTS synthesizes the narration.
+8. The backend streams typed events to the frontend.
+9. The frontend playback scheduler:
+   - starts audio
+   - schedules whiteboard actions
+   - handles interruption and rollback
+10. The student reacts.
+11. The backend checks the student response.
+12. The backend updates session summary and learner memory.
 
 ---
 
-## 6. Tools / API интеграции
+## 5. Main modules
 
-### Canvas
+### 5.1 Orchestrator
+Responsible for:
+- step planning
+- selecting the next teaching action
+- choosing explain / ask / check / repair
+- deciding when to update memory
 
-Разрешенные high-level actions:
+### 5.2 Board Context Builder
+Responsible for:
+- full-board thumbnail
+- active crop
+- structured board JSON
+- recent student actions
+- student-attempt packaging
 
-- `highlight_area`
-- `place_hint_note`
-- `draw_arrow`
-- `draw_number_line`
-- `draw_place_value_table`
-- `reveal_next_step`
+### 5.3 Correctness Layer
+Responsible for:
+- deterministic checks where possible
+- model-based checking where needed
+- ambiguity handling
+- confidence scoring
 
-### Voice
+### 5.4 Voice Layer
+Responsible for:
+- Azure ASR
+- Azure TTS
+- timing-aware speech output
+- interruption hooks
 
-- основной режим: realtime speech-to-speech;
-- fallback: chained `ASR → text → TTS`;
-- при полном сбое voice слой отключается, сессия продолжается через text + canvas.
+### 5.5 Playback Scheduler
+Responsible for:
+- narration timeline execution
+- semantic anchor execution
+- whiteboard action timing
+- cancellation of future actions
 
-### Programmatic trigger
+### 5.6 Memory Layer
+Responsible for:
+- Redis live state
+- Postgres learner memory
+- storage artifacts
+- session summaries
 
-Для tutor-сценария агент вызывается из UI-кнопок, а не только из чата:
+### 5.7 Evaluation Layer
+Responsible for:
+- tutor review
+- automated evaluation
+- version comparison
 
-- `Review Work`
-- `Explain Step`
-- `Give Hint`
-- `Check Understanding`
+### 5.8 Billing Layer
+Not active in early versions.
+Later responsible for:
+- product plans
+- subscription state
+- entitlements
+- usage accounting
 
 ---
 
-## 7. Failure Modes и Guardrails
+## 6. Synchronization strategy
 
-| Компонент | Failure | Fallback |
-|---|---|---|
-| LLM | timeout / 5xx | retry, затем короткая текстовая подсказка |
-| Retrieval | 0 результатов | clarification или low-confidence hint |
-| Realtime voice | transport error | chained mode |
-| Voice layer | недоступен | text + canvas |
-| Canvas executor | action error | voice/text without board step |
-| Memory store | недоступен | stateless mode |
+Synchronization is timeline-based.
 
-Guardrails:
+The backend does not stream arbitrary narration and expect the frontend to infer drawing behavior.
 
-- hint-first policy;
-- anti-cheating;
-- age adaptation;
-- ограниченный набор canvas actions;
-- schema validation для step package.
+Instead, the backend produces a structured step:
+- narration
+- semantic anchors
+- board action batches
+- optional micro-sync hints
+
+The frontend uses this structure plus Azure timing data to apply actions at the right moments.
+
+### Primary sync mechanism
+Semantic anchors:
+- show_equation
+- focus_region
+- highlight_brackets
+- write_next_line
+- ask_check_question
+
+### Secondary sync mechanism
+Word-level timing for:
+- small highlight effects
+- token emphasis
+- subtle cues
+
+The product should rely mostly on semantic sync.
 
 ---
 
-## 8. Ограничения
+## 7. Context strategy for model input
+
+The model receives hybrid context:
+
+### Visual context
+- full board thumbnail
+- active crop
+
+### Structured context
+- typed shapes
+- grouped strokes
+- bounds and positions
+- recent edits
+- authorship metadata
+
+### Teaching context
+- original problem
+- current expected step
+- last explanation summary
+- explicit evaluation target
+
+The model must always receive a narrow task.
+Do not ask only “is this correct?” without specifying what to evaluate.
+
+---
+
+## 8. State and memory
+
+### Live session state in Redis
+- active turn id
+- pending narration
+- pending anchors
+- pending board actions
+- interruption flags
+- replay buffer
+- current teaching mode
+
+### Persistent state in Supabase
+- users
+- learners
+- sessions
+- session summaries
+- recurring mistakes
+- weak topics
+- tutor evaluations
+- automated evaluations
+- later billing state
+
+### Artifacts in Storage
+- audio
+- board exports
+- screenshots
+- replay assets
+
+---
+
+## 9. Observability
+
+### Instrumentation
+Use OpenTelemetry across backend runtime.
+
+### LLM/product observability
+Use Langfuse for:
+- traces
+- prompt versions
+- cost
+- latency
+- eval datasets
+- experiments
+
+### Infra observability
+Use Grafana stack for:
+- logs
+- traces
+- dashboards
+- alerts
+
+Track:
+- time to first response
+- ASR latency
+- TTS latency
+- sync drift
+- interruption rate
+- action validation failures
+- Redis failures
+- storage failures
+
+---
+
+## 10. Framework decisions
+
+### tldraw
+Use as the whiteboard and visual interaction layer.
+
+### LangGraph
+Do not use in the live tutoring path.
+May be introduced later for slow-path workflows.
+
+### Mem0
+Do not use as source of truth in v1.
+May be evaluated later as optional memory enrichment.
+
+---
+
+## 11. Failure modes and fallback
+
+### TTS timing degraded
+Fallback:
+- semantic anchors only
+- disable fine-grained micro-sync
+
+### ASR low confidence
+Fallback:
+- ask the student to repeat
+- offer text input
+- ask the student to mark the region on the board
+
+### Board interpretation ambiguous
+Fallback:
+- ask the student to circle the line to check
+- ask the student to rewrite larger
+
+### Model uncertainty
+Fallback:
+- do not confidently judge correctness
+- switch to clarification mode
+
+### Interruption
+Fallback:
+- stop audio
+- cancel not-yet-applied actions
+- cut current turn
+- resume planning from the partial state
+
+---
+
+## 12. Operational constraints
 
 ### Latency
+- ideal time to first response: < 1 second
+- acceptable p95 for early production: < 5 seconds
 
-- time to first visible response: идеальная цель `< 1 с`, допустимый компромисс `p95 < 5 с`
-- end-to-end step delivery: `p95 < 5 с`
+### Solo-builder constraint
+- architecture must remain understandable and operable by one person
 
-### Cost
+### Product constraint
+- one excellent tutoring loop is more valuable than broad unfinished scope
 
-- обычно `1–2` LLM calls на шаг;
-- `1` retrieval + rerank на шаг;
-- realtime voice как основной режим, chained — только fallback.
+## Frontend design role
 
-### In scope
+The frontend is the product shell and real-time interaction layer.
 
-- математика для 4–7 класса;
-- одна задача за сессию;
-- realtime voice + `tldraw`;
-- retrieval только по банку задач.
+It is responsible for:
+- rendering the tutor interface
+- hosting the whiteboard
+- playing audio
+- applying timed whiteboard actions
+- handling websocket events
+- exposing future product surfaces such as settings, learner pages, and billing pages
 
-### Out of scope
-
-- все школьные предметы;
-- длинная образовательная траектория;
-- general-purpose chat mode.
+It is not responsible for:
+- tutoring orchestration
+- long-term memory decisions
+- correctness checking
+- model routing
